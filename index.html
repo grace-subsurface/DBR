@@ -180,6 +180,84 @@
     border-top:1px solid var(--line);
   }
 
+  /* ---------- Mailto fallback ---------- */
+  .mail-fallback{
+    position:fixed; inset:0; z-index:1000;
+    display:flex; align-items:center; justify-content:center;
+    padding:1.5rem;
+  }
+  .mail-fallback[hidden]{ display:none; }
+
+  .mail-fallback .backdrop{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,0.8);
+    -webkit-backdrop-filter:blur(6px);
+    backdrop-filter:blur(6px);
+  }
+
+  .mail-card{
+    position:relative;
+    width:min(30rem,100%);
+    background:#0a0a0a;
+    border:1px solid var(--line);
+    border-radius:1.25rem;
+    padding:clamp(2rem,5vw,2.75rem);
+    text-align:center;
+    animation: fallbackIn .45s var(--ease);
+  }
+
+  @keyframes fallbackIn{
+    from{ opacity:0; transform:translateY(12px) scale(.98); }
+    to{ opacity:1; transform:none; }
+  }
+
+  .mail-card .label{
+    display:block;
+    font-size:0.7rem; letter-spacing:0.3em; text-transform:uppercase;
+    color:var(--accent);
+    margin-bottom:1rem;
+  }
+  .mail-card h2{
+    font-size:clamp(1.35rem,4vw,1.8rem);
+    font-weight:600; letter-spacing:-0.02em; line-height:1.1;
+    margin-bottom:0.8rem;
+  }
+  .mail-card p{
+    font-size:0.88rem; line-height:1.55;
+    color:var(--fg-dim);
+    margin-bottom:1.6rem;
+  }
+  .mail-card .address{
+    display:block;
+    font-size:clamp(1rem,3.4vw,1.15rem);
+    color:var(--fg);
+    border:1px dashed var(--line);
+    border-radius:0.75rem;
+    padding:0.95rem 1rem;
+    margin-bottom:1.4rem;
+    word-break:break-all;
+    -webkit-user-select:all; user-select:all;
+  }
+  .mail-copy{
+    width:100%;
+    justify-content:center;
+    font-family:inherit;
+  }
+  .mail-copy.copied{ background:var(--fg); }
+  .mail-close{
+    position:absolute; top:0.7rem; right:0.95rem;
+    background:none; border:none; cursor:pointer;
+    font-family:inherit; font-size:1.6rem; line-height:1;
+    color:var(--fg-dim);
+    padding:0.2rem 0.45rem;
+    transition: color .3s var(--ease);
+  }
+  .mail-close:hover{ color:var(--fg); }
+  .mail-card button:focus-visible{
+    outline:2px solid var(--fg);
+    outline-offset:3px;
+  }
+
   @media (max-width:640px){
     header{ padding:1.5rem 1.25rem; }
     h1.headline{ font-size:clamp(1.9rem, 9.5vw, 6.2rem); }
@@ -219,8 +297,111 @@
   © <span id="year"></span> DBR. All rights reserved.
 </footer>
 
+<div class="mail-fallback" id="mail-fallback" hidden>
+  <div class="backdrop" data-close></div>
+  <div class="mail-card" role="dialog" aria-modal="true" aria-labelledby="mail-fallback-title">
+    <button class="mail-close" type="button" data-close aria-label="Close">&times;</button>
+    <span class="label">No mail app found</span>
+    <h2 id="mail-fallback-title">Email us directly</h2>
+    <p>Your browser couldn&rsquo;t open an email app. Copy the address below and send us a note about build slots.</p>
+    <span class="address">sales@dbr-rigs.com</span>
+    <button class="btn-preorder mail-copy" type="button" id="mail-copy">
+      <span class="label-text">Copy address</span>
+    </button>
+  </div>
+</div>
+
 <script>
   document.getElementById('year').textContent = new Date().getFullYear();
+
+  (function () {
+    var ADDRESS = 'sales@dbr-rigs.com';
+    var dialog = document.getElementById('mail-fallback');
+    var copyBtn = document.getElementById('mail-copy');
+    var copyLabel = copyBtn.querySelector('.label-text');
+    var timer = null;
+    var lastFocused = null;
+
+    function standDown() { clearTimeout(timer); }
+
+    function showFallback() {
+      lastFocused = document.activeElement;
+      dialog.hidden = false;
+      copyBtn.focus();
+    }
+
+    function hideFallback() {
+      dialog.hidden = true;
+      copyBtn.classList.remove('copied');
+      copyLabel.textContent = 'Copy address';
+      if (lastFocused && lastFocused.focus) lastFocused.focus();
+    }
+
+    function markCopied() {
+      copyBtn.classList.add('copied');
+      copyLabel.textContent = 'Copied';
+    }
+
+    function legacyCopy() {
+      var field = document.createElement('textarea');
+      field.value = ADDRESS;
+      field.setAttribute('readonly', '');
+      field.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+      document.body.appendChild(field);
+      field.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      document.body.removeChild(field);
+      if (ok) { markCopied(); } else { offerManualCopy(); }
+    }
+
+    // Last resort: highlight the address so it can be copied by keyboard.
+    function offerManualCopy() {
+      var node = dialog.querySelector('.address');
+      var range = document.createRange();
+      range.selectNodeContents(node);
+      var selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      var key = /Mac|iPhone|iPad|iPod/.test(navigator.platform || '') ? '\u2318C' : 'Ctrl+C';
+      copyLabel.textContent = 'Press ' + key + ' to copy';
+    }
+
+    function copyAddress() {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(ADDRESS).then(markCopied, legacyCopy);
+      } else {
+        legacyCopy();
+      }
+    }
+
+    Array.prototype.forEach.call(
+      document.querySelectorAll('a[href^="mailto:"]'),
+      function (link) {
+        link.addEventListener('click', function () {
+          standDown();
+          timer = setTimeout(showFallback, 1200);
+        });
+      }
+    );
+
+    // A mail client opening steals focus from the browser, so that means it worked.
+    window.addEventListener('blur', standDown);
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) standDown();
+    });
+
+    copyBtn.addEventListener('click', copyAddress);
+
+    Array.prototype.forEach.call(
+      dialog.querySelectorAll('[data-close]'),
+      function (el) { el.addEventListener('click', hideFallback); }
+    );
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !dialog.hidden) hideFallback();
+    });
+  })();
 </script>
 
 </body>
